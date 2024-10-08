@@ -3,6 +3,8 @@ from transformers import pipeline
 from datasets import Dataset
 import torch
 from typing import List
+import requests
+import json
 
 # Suppress the FutureWarning related to clean_up_tokenization_spaces
 warnings.filterwarnings("ignore", category=FutureWarning, module="transformers.tokenization_utils_base")
@@ -12,6 +14,12 @@ device: torch.device = torch.device('cuda' if torch.cuda.is_available() else 'cp
 device_id: int = 0 if torch.cuda.is_available() else -1  # 0 for GPU, -1 for CPU in Hugging Face pipeline
 
 print("Device:", device)
+
+def summarize_text(file_name):
+    with open(file_name, "r") as file:
+        # Read the contents of the file into a string
+        text = file.read()
+    return summarize_distilbart(text)
 
 def summarize_distilbart(text: str) -> str:
     """
@@ -64,12 +72,86 @@ def summarize_distilbart(text: str) -> str:
     # Combine the individual summaries into one cohesive summary by joining them with spaces.
     return " ".join(summary_text)
 
+def summarize_with_ollama(text: str, model_name: str = "gemma") -> str:
+    """
+    Summarizes a given text by querying an Ollama model and handling streaming responses.
+    
+    :param text: The full text to be summarized.
+    :return: A single string containing the summarized text from the Ollama model.
+    """
+    # Define the system prompt to guide the models behavior and tone
+    system_prompt = """
+        You are an AI assistant designed to help P&C insurance claims adjusters. 
+        Your goal is to generate clear and concise summaries of lengthy documents, such as loss reports, policy documents, medical reports, and repair estimates. 
+        Summarize the key details like dates, amounts, parties involved, liability, and any critical findings, while avoiding unnecessary detail.
+        """
+    
+    # Define the prompt for summarization
+    user_prompt = f"Summarize the following document:\n\n{text}\n\nProvide a concise and relevant summary for a claims adjuster."
+
+     # Combine both system and user prompts
+    complete_prompt = system_prompt + "\n" + user_prompt
+
+    try:
+        # Send the prompt to the Ollama model for summarization with streaming enabled
+        response = requests.post(
+            "http://localhost:11434/api/generate",  # Replace with your actual API endpoint
+            json={
+                "model": model_name,  # Specify the Ollama model you're using
+                "prompt": complete_prompt
+            },
+            stream=True  # Enable streaming
+        )
+
+        # Check if the response status is 200 OK
+        if response.status_code != 200:
+            return f"Error: Received status code {response.status_code} from the Ollama API."
+
+        # Initialize an empty list to collect streamed parts of the response
+        collected_response = []
+
+        # Process each line in the streamed response
+        for line in response.iter_lines():
+            if line:
+                # Convert the line from bytes to string
+                line_data = line.decode('utf-8')
+                
+                # Convert the line into JSON format using json library
+                try:
+                    json_data = json.loads(line_data)  # Corrected to use the `json` module
+                    # Append the "response" field to the collected response list
+                    collected_response.append(json_data.get('response', ''))
+
+                    # If "done" is true, stop processing
+                    if json_data.get('done', False):
+                        break
+                except ValueError:
+                    return f"Error: Could not parse JSON from the streamed response."
+
+        # Join the collected responses and return as a single string
+        summary = ''.join(collected_response).strip()
+        return summary
+
+    except Exception as e:
+        return f"Error: Could not connect to the Ollama API. Exception: {str(e)}"
+
+
 def main() -> None:
     """
     Entry point for testing the summarize_distilbart function.
     This is a placeholder function and currently raises a NotImplementedError.
     """
-    raise NotImplementedError("Main testing not implemented")
+    #print("Summary-Long:", summarize_text("../data/long_text.txt"))
+    #print("Summary-Medium:", summarize_text("../data/mid_text.txt"))
+    #print("Summary-Short:", summarize_text("../data/short_text.txt"))
+
+    with open("../data/long_text.txt", "r") as file:
+        # Read the contents of the file into a string
+        text = file.read()
+    print("Summary-Ollama-gemma", summarize_with_ollama(text, "gemma"))
+    print("Summary-Ollama-llama", summarize_with_ollama(text, "llama3.2"))
+
+
 
 if __name__ == "__main__":
     main()

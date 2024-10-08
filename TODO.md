@@ -1,8 +1,8 @@
 - [x] test text summarization
 - [x] create reusable function for summarization
-- [ ] get document
-- [ ] check file type of document
-- [ ] if pdf, split and get each page
+- [x] get document
+- [x] check file type of document
+- [x] if pdf, split and get each page
     - [ ] convert to images.
     - [ ] use pytesseract to get text from image
     - [ ] summarize each page
