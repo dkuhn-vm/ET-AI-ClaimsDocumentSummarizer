@@ -27,7 +27,7 @@ def summarize_document():
             return jsonify({'error': 'No text could be extracted from the document'}), 400
 
         # Summarize the extracted text
-        summary = summarizers.summarize_with_ollama(document_text)
+        summary = summarizers.summarize_claims_with_ollama(document_text)
 
         # Return the summarized text as a response
         return jsonify({'summary': summary}), 200

@@ -1,12 +1,14 @@
 import os
 from PyPDF2 import PdfReader
 from docx import Document
-from PIL import Image
-import pytesseract
 from pdf2image import convert_from_path
-#from vm_ai_helpers import img_processing, text_processing, summarizers
-import img_processing, text_processing, summarizers
 import tempfile
+if __name__ == "__main__":
+    # This block runs when the script is imported as a module
+    import img_processing, text_processing, summarizers    
+else:
+    # This block runs when the script is executed directly
+    from vm_ai_helpers import img_processing, text_processing, summarizers
 
 def read_pdf(file_path: str) -> str:
     """
@@ -124,7 +126,7 @@ def test_distilbart(file_path) -> None:
 def test_ollama(file_path, model_name="gemma") -> None:
     try:
         document_text = read_document(file_path)
-        summary = summarizers.summarize_with_ollama(document_text, model_name)
+        summary = summarizers.summarize_claims_with_ollama(document_text, model_name)
         print(model_name, summary)  # This is where you would pass the text to the summarization function
     except Exception as e:
         print(f"Error processing document: {e}")
