@@ -36,6 +36,10 @@ def summarize_document():
         app.logger.error(f"Error during summarization: {str(e)}")
         return jsonify({'error': 'Internal server error. Please try again later.'}), 500
 
+@app.route('/health', methods=['GET'])
+def health_check():
+    return jsonify({'status': 'ok'}), 200
+
 if __name__ == '__main__':
     # Start the Flask service
     app.run(host='0.0.0.0', port=5000, debug=True)

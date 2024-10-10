@@ -1,10 +1,8 @@
 import warnings
-import ollama_funcs
 from transformers import pipeline
 from datasets import Dataset
 import torch
 from typing import List
-
 if __name__ == "__main__":
     import ollama_funcs
 else:

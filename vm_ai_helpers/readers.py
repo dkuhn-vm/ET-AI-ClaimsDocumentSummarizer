@@ -4,10 +4,8 @@ from docx import Document
 from pdf2image import convert_from_path
 import tempfile
 if __name__ == "__main__":
-    # This block runs when the script is imported as a module
-    import img_processing, text_processing, summarizers    
+    import img_processing, text_processing, summarizers
 else:
-    # This block runs when the script is executed directly
     from vm_ai_helpers import img_processing, text_processing, summarizers
 
 def read_pdf(file_path: str) -> str:
