@@ -6,8 +6,7 @@ import os
 app = Flask(__name__)
 CORS(app)  # Enable CORS
 
-@app.route('/summarize', methods=['POST'])
-def summarize_document():
+def check_file_uploaded(request) -> str:
     try:
         # Check if the request contains a file
         if 'file' not in request.files:
@@ -19,6 +18,18 @@ def summarize_document():
         # Save the file temporarily for processing
         file_path = os.path.join('/tmp', uploaded_file.filename)
         uploaded_file.save(file_path)
+
+        return file_path
+
+    except Exception as e:
+        app.logger.error(f"Error during summarization: {str(e)}")
+        return jsonify({'error': 'Internal server error. Please try again later.'}), 500
+
+
+@app.route('/summarize', methods=['POST'])
+def summarize_document():
+    try:
+        file_path = check_file_uploaded(request)
 
         # Extract text from the document
         document_text = readers.read_document(file_path)
