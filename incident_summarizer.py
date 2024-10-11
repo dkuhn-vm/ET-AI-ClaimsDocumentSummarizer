@@ -1,4 +1,8 @@
 from vm_ai_helpers import readers, summarizers
+import multiprocessing
+
+# Get number of CPU cores
+cpu_count = multiprocessing.cpu_count()
 
 def summarize_incidents_from_csv(file_path, model_name="gemma") -> None:
     """
@@ -9,7 +13,7 @@ def summarize_incidents_from_csv(file_path, model_name="gemma") -> None:
     """
     try:
         # Read and process the CSV file with progress tracking
-        incidents_df = readers.read_csv_with_progress(file_path)
+        incidents_df = readers.read_csv_with_parallel_processing(file_path=file_path, max_workers=cpu_count)
         
         # Now you can access the 'Processed Summary' column or do further processing
         all_summaries = []

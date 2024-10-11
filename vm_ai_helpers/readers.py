@@ -4,28 +4,38 @@ from docx import Document
 from pdf2image import convert_from_path
 import tempfile
 from tqdm import tqdm
+from concurrent.futures import ProcessPoolExecutor, as_completed
 if __name__ == "__main__":
     import img_processing, text_processing, summarizers
 else:
     from vm_ai_helpers import img_processing, text_processing, summarizers
 
 import pandas as pd
-import csv  # Python's CSV module to handle quoting
+import csv
+import threading
+import signal
+
+# Create a lock object for file writing
+write_lock = threading.Lock()
+
+# Create a global flag to stop the processing when Ctrl+C is pressed
+should_exit = False
+
+def signal_handler(sig, frame):
+    global should_exit
+    print("Gracefully shutting down...")
+    should_exit = True  # Set the exit flag to True
+
+# Register signal handler for Ctrl+C
+signal.signal(signal.SIGINT, signal_handler)
 
 def clean_csv(file_path: str, output_path: str) -> None:
-    """
-    Cleans a CSV file by removing line breaks within quoted fields, preserving line breaks between records.
-    
-    :param file_path: Path to the input CSV file.
-    :param output_path: Path to save the cleaned CSV file.
-    """
     try:
         with open(file_path, 'r', encoding='utf-8') as infile, open(output_path, 'w', encoding='utf-8', newline='') as outfile:
             reader = csv.reader(infile)
             writer = csv.writer(outfile)
             
             for row in reader:
-                # Join multiline fields within the row (fields with newlines inside them)
                 clean_row = [field.replace('\n', ' ').replace('\r', ' ') for field in row]
                 writer.writerow(clean_row)
         print(f"CSV cleaned successfully. Saved to {output_path}")
@@ -36,7 +46,6 @@ def clean_csv(file_path: str, output_path: str) -> None:
             with open(file_path, 'r', encoding='ISO-8859-1') as infile, open(output_path, 'w', encoding='utf-8', newline='') as outfile:
                 reader = csv.reader(infile)
                 writer = csv.writer(outfile)
-
                 for row in reader:
                     clean_row = [field.replace('\n', ' ').replace('\r', ' ') for field in row]
                     writer.writerow(clean_row)
@@ -48,104 +57,138 @@ def clean_csv(file_path: str, output_path: str) -> None:
     except Exception as e:
         print(f"Error cleaning CSV: {e}")
 
-def read_csv_with_progress(file_path: str, encoding='utf-8', chunk_size=500) -> pd.DataFrame:
+def process_chunk_parallel(chunk: pd.DataFrame, chunk_id: int, md_output_path: str) -> pd.DataFrame:
     """
-    Cleans the CSV to remove line breaks within fields, then reads it in chunks, processes each chunk individually, 
-    and returns a concatenated DataFrame.
+    Process each chunk in parallel.
     
-    :param file_path: Path to the original CSV file.
-    :param encoding: Encoding to use for reading the CSV.
-    :param chunk_size: Number of rows per chunk.
-    :return: A pandas DataFrame containing all the data.
+    :param chunk: A pandas DataFrame chunk containing part of the CSV data.
+    :param chunk_id: An identifier for the chunk.
+    :param md_output_path: Path to the markdown file for logging summaries.
+    :return: A pandas DataFrame chunk with additional processed information.
     """
-    # Generate a temporary cleaned file path
+    global should_exit
+    if should_exit:
+        print(f"Stopping chunk processing for chunk {chunk_id} due to exit signal.")
+        return pd.DataFrame()  # Return empty dataframe if the process is interrupted
+
+    try:
+        # Detect text-based columns and process the chunk
+        text_columns = detect_text_columns(chunk)
+        if not text_columns:
+            raise ValueError("No text-based columns found for summarization.")
+
+        for index, row in chunk.iterrows():
+            if should_exit:  # Check if we should exit in the middle of processing
+                print(f"Stopping row processing for chunk {chunk_id} due to exit signal.")
+                return pd.DataFrame()  # Return empty dataframe if the process is interrupted
+            
+            print(f"Processing row {index}: {row['Number']} {row['Summary'][:100]}")
+
+            incident_text = " ".join([str(row[col]) for col in text_columns if isinstance(row[col], str)])
+            summary = summarizers.summarize_incident(incident_text, model_name="gemma")
+            chunk.loc[index, 'Processed Summary'] = summary
+
+        # Use the lock to ensure only one process writes to the file at a time
+        with write_lock:
+            with open(md_output_path, 'a') as md_file:
+                md_file.write(f"### Chunk {chunk_id} Summary\n")
+                md_file.write(f"Processed {len(chunk)} rows in this chunk.\n\n")
+                for index, row in chunk.iterrows():
+                    summary = row.get('Processed Summary', 'No summary available')
+                    md_file.write(f"- **Incident {index}**: {summary}\n")
+                md_file.write("\n---\n\n")
+
+    except Exception as e:
+        print(f"Error processing chunk {chunk_id}: {e}")
+
+    return chunk
+
+def read_csv_with_parallel_processing(file_path: str, encoding='utf-8', chunk_size=500, md_output_path='output.md', max_workers=8) -> pd.DataFrame:
+    """
+    Reads a CSV file in chunks, processes each chunk in parallel, and writes the results to a markdown file.
+    Handles Ctrl+C gracefully to stop all processes.
+    """
+    global should_exit
+    should_exit = False  # Reset exit flag
+
     cleaned_csv_path = file_path.replace(".csv", "_cleaned.csv")
-    
-    # Step 1: Clean the CSV to remove line breaks within fields
     clean_csv(file_path, cleaned_csv_path)
     
-    all_chunks = []  # To hold all processed chunks
-    
+    all_chunks = []
+
+    with open(md_output_path, 'w') as md_file:
+        md_file.write("# Incident Summary Report\n\n")
+        md_file.write("## Processing Details\n\n")
+
     try:
-        # Calculate total rows for progress tracking
-        total_rows = sum(1 for _ in open(cleaned_csv_path, encoding=encoding)) - 1 # Subtract 1 for header
+        total_rows = sum(1 for _ in open(cleaned_csv_path, encoding=encoding)) - 1
         print(f"Total rows: {total_rows}")
         
-        # Step 2: Read the cleaned CSV file in chunks
-        chunks = pd.read_csv(cleaned_csv_path, encoding=encoding, chunksize=chunk_size, 
-                             low_memory=False, quoting=csv.QUOTE_MINIMAL)
+        chunks = pd.read_csv(cleaned_csv_path, encoding=encoding, chunksize=chunk_size, low_memory=False, quoting=csv.QUOTE_MINIMAL)
         
-        chunk_count = 0  # Counter to track chunks processed
-        
-        # Iterate through chunks and process each chunk
-        for chunk in tqdm(chunks, total=total_rows // chunk_size, desc="Reading and processing CSV"):
-            print(f"Processing chunk {chunk_count}")
-            processed_chunk = process_chunk(chunk)  # Process the chunk and return it
-            all_chunks.append(processed_chunk)  # Append processed chunk to list
-            chunk_count += 1
-        
+        futures = []
+        with ProcessPoolExecutor(max_workers=max_workers) as executor:
+            for chunk_id, chunk in enumerate(tqdm(chunks, total=total_rows // chunk_size, desc="Reading and processing CSV")):
+                if should_exit:
+                    print("Exiting process due to Ctrl+C")
+                    break  # Stop submitting new chunks if we should exit
+                futures.append(executor.submit(process_chunk_parallel, chunk, chunk_id, md_output_path))
+            
+            for future in as_completed(futures):
+                if should_exit:
+                    break  # Stop waiting for other futures if exit was requested
+                processed_chunk = future.result()
+                all_chunks.append(processed_chunk)
+
         # Concatenate all processed chunks into a single DataFrame
-        final_df = pd.concat(all_chunks, ignore_index=True)
-        print(f"Finished processing {chunk_count} chunks")
-        return final_df
-    
-    except UnicodeDecodeError:
-        print(f"Failed to read CSV with {encoding} encoding, falling back to ISO-8859-1")
-        return read_csv_with_progress(file_path, encoding='ISO-8859-1', chunk_size=chunk_size)
+        if not should_exit:
+            final_df = pd.concat(all_chunks, ignore_index=True)
+            print(f"Finished processing {len(all_chunks)} chunks")
+            
+            with open(md_output_path, 'a') as md_file:
+                md_file.write("\n## Processing Completed\n\n")
+                md_file.write(f"Total chunks processed: {len(all_chunks)}\n")
+
+            # Generate and write the final summary
+            write_final_summary(md_output_path)
+
+            return final_df
+        else:
+            print("Process terminated by user.")
+            return pd.DataFrame()
+
     except Exception as e:
         print(f"Error reading CSV: {e}")
-        return pd.DataFrame()  # Return an empty DataFrame in case of failure
-    
+        return pd.DataFrame()
+
 def detect_text_columns(chunk: pd.DataFrame) -> list:
-    """
-    Detects columns that contain mostly text data.
-    
-    :param chunk: A pandas DataFrame chunk.
-    :return: A list of column names that likely contain textual data.
-    """
     text_columns = []
     for col in chunk.columns:
-        # Check if the majority of the data in the column is string (text)
-        if chunk[col].apply(lambda x: isinstance(x, str)).mean() > 0.5:  # More than 50% of the column is text
+        if chunk[col].apply(lambda x: isinstance(x, str)).mean() > 0.5:
             text_columns.append(col)
     return text_columns
 
 
 def process_chunk(chunk: pd.DataFrame) -> pd.DataFrame:
-    """
-    Processes a chunk of the CSV file by summarizing incidents in the chunk, detecting text columns dynamically.
-    
-    :param chunk: A pandas DataFrame chunk containing part of the CSV data.
-    :return: A pandas DataFrame chunk with additional processed information.
-    """
     try:
-        # Detect text-based columns
         text_columns = detect_text_columns(chunk)
         print(f"Detected text columns: {text_columns}")
         
-        # If no text columns are found, raise an error or skip the chunk
         if not text_columns:
             raise ValueError("No text-based columns found for summarization.")
         
-        # Create the 'Processed Summary' column if it doesn't exist
         if 'Processed Summary' not in chunk.columns:
             print("Adding 'Processed Summary' column to the chunk")
-            chunk['Processed Summary'] = ""  # Initialize an empty column
+            chunk['Processed Summary'] = ""
         
-        # Iterate through each row of the chunk and process the incident data
         for index, row in chunk.iterrows():
-            # Combine text from relevant columns for summarization
             incident_text = " ".join([str(row[col]) for col in text_columns if isinstance(row[col], str)])
-            
-            # Actual summarization using Ollama model
             summary = summarizers.summarize_incident(incident_text, model_name="gemma")
-            #print(f"Processed summary for row {index}: {summary}")  # Debug print for each row
-
-            chunk.loc[index, 'Processed Summary'] = summary  # Store the summary in the 'Processed Summary' column
+            chunk.loc[index, 'Processed Summary'] = summary
     except Exception as e:
         print(f"Error processing chunk: {e}")
     
-    return chunk  # Return the processed chunk
+    return chunk
 
 def read_pdf(file_path: str) -> str:
     """

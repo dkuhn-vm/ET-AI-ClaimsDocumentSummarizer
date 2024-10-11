@@ -102,6 +102,7 @@ def summarize_incident(text: str, model_name: str = "gemma") -> str:
     :param model_name: The name of the Ollama model to use.
     :return: A summarized string of the incident.
     """
+    print(f"Summarizing incident: {text[:100]}...")
     # Define the prompt for summarizing individual incidents
     system_prompt = """
         You are an AI assistant that helps software development and QA teams understand incident reports.
