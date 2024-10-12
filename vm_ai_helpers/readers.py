@@ -34,7 +34,6 @@ def clean_csv(file_path: str, output_path: str) -> None:
         with open(file_path, 'r', encoding='utf-8') as infile, open(output_path, 'w', encoding='utf-8', newline='') as outfile:
             reader = csv.reader(infile)
             writer = csv.writer(outfile)
-            
             for row in reader:
                 clean_row = [field.replace('\n', ' ').replace('\r', ' ') for field in row]
                 writer.writerow(clean_row)
@@ -57,13 +56,12 @@ def clean_csv(file_path: str, output_path: str) -> None:
     except Exception as e:
         print(f"Error cleaning CSV: {e}")
 
-def process_chunk_parallel(chunk: pd.DataFrame, chunk_id: int, md_output_path: str) -> pd.DataFrame:
+def process_chunk_parallel(chunk: pd.DataFrame, chunk_id: int) -> pd.DataFrame:
     """
-    Process each chunk in parallel.
+    Process each chunk in parallel without writing to file immediately.
     
     :param chunk: A pandas DataFrame chunk containing part of the CSV data.
     :param chunk_id: An identifier for the chunk.
-    :param md_output_path: Path to the markdown file for logging summaries.
     :return: A pandas DataFrame chunk with additional processed information.
     """
     global should_exit
@@ -72,10 +70,15 @@ def process_chunk_parallel(chunk: pd.DataFrame, chunk_id: int, md_output_path: s
         return pd.DataFrame()  # Return empty dataframe if the process is interrupted
 
     try:
+        # Ensure 'Processed Summary' column exists in the chunk
+        if 'Processed Summary' not in chunk.columns:
+            print(f"Adding 'Processed Summary' column to chunk {chunk_id}")
+            chunk['Processed Summary'] = ""  # Initialize the column with empty strings
+
         # Detect text-based columns and process the chunk
         text_columns = detect_text_columns(chunk)
         if not text_columns:
-            raise ValueError("No text-based columns found for summarization.")
+            raise ValueError(f"No text-based columns found for summarization in chunk {chunk_id}.")
 
         for index, row in chunk.iterrows():
             if should_exit:  # Check if we should exit in the middle of processing
@@ -84,55 +87,60 @@ def process_chunk_parallel(chunk: pd.DataFrame, chunk_id: int, md_output_path: s
             
             print(f"Processing row {index}: {row['Number']} {row['Summary'][:100]}")
 
-            incident_text = " ".join([str(row[col]) for col in text_columns if isinstance(row[col], str)])
+            # Combine all the relevant text from text columns for summarization
+            incident_text = "\n".join([f"{col}: {str(row[col])}" for col in text_columns if isinstance(row[col], str)])  # Ensure proper newlines for better formatting
             summary = summarizers.summarize_incident(incident_text, model_name="gemma")
-            chunk.loc[index, 'Processed Summary'] = summary
-
-        # Use the lock to ensure only one process writes to the file at a time
-        with write_lock:
-            with open(md_output_path, 'a') as md_file:
-                md_file.write(f"### Chunk {chunk_id} Summary\n")
-                md_file.write(f"Processed {len(chunk)} rows in this chunk.\n\n")
-                for index, row in chunk.iterrows():
-                    summary = row.get('Processed Summary', 'No summary available')
-                    md_file.write(f"- **Incident {index}**: {summary}\n")
-                md_file.write("\n---\n\n")
+            chunk.loc[index, 'Processed Summary'] = summary  # Store the summary for each incident
 
     except Exception as e:
         print(f"Error processing chunk {chunk_id}: {e}")
 
     return chunk
 
-def read_csv_with_parallel_processing(file_path: str, encoding='utf-8', chunk_size=500, md_output_path='output.md', max_workers=8) -> pd.DataFrame:
+def read_csv_with_parallel_processing(file_path: str, encoding='utf-8', chunk_size=500, max_workers=8, debug=False, sample_size=100) -> pd.DataFrame:
     """
-    Reads a CSV file in chunks, processes each chunk in parallel, and writes the results to a markdown file.
-    Handles Ctrl+C gracefully to stop all processes.
+    Reads a CSV file in chunks, processes each chunk in parallel, and returns the final processed DataFrame.
+    Handles Ctrl+C gracefully to stop all processes. If utf-8 encoding fails, it falls back to ISO-8859-1.
+    
+    :param file_path: Path to the CSV file.
+    :param encoding: Encoding of the CSV file (default is 'utf-8').
+    :param chunk_size: Number of rows to process in each chunk (default is 500).
+    :param max_workers: Maximum number of workers for parallel processing (default is 8).
+    :param debug: Boolean flag to indicate whether debugging is enabled.
+    :param sample_size: Number of random records to sample if debugging is enabled.
+    :return: Processed pandas DataFrame.
     """
     global should_exit
     should_exit = False  # Reset exit flag
 
     cleaned_csv_path = file_path.replace(".csv", "_cleaned.csv")
-    clean_csv(file_path, cleaned_csv_path)
-    
+    clean_csv(file_path, cleaned_csv_path)  # Ensure the CSV is cleaned of newlines
+
     all_chunks = []
 
-    with open(md_output_path, 'w') as md_file:
-        md_file.write("# Incident Summary Report\n\n")
-        md_file.write("## Processing Details\n\n")
-
     try:
+        # Try reading with the provided encoding
         total_rows = sum(1 for _ in open(cleaned_csv_path, encoding=encoding)) - 1
         print(f"Total rows: {total_rows}")
         
+        # Read CSV in chunks
         chunks = pd.read_csv(cleaned_csv_path, encoding=encoding, chunksize=chunk_size, low_memory=False, quoting=csv.QUOTE_MINIMAL)
-        
+
+        # If debugging, select a random sample of rows to process
+        if debug:
+            print(f"Debug mode enabled. Sampling {sample_size} random records for processing.")
+            full_df = pd.concat(chunks)  # Load the entire CSV into memory
+            full_df_sample = full_df.sample(n=sample_size, random_state=42)  # Take a random sample
+            chunks = [full_df_sample]  # Replace chunks with the sampled data
+            total_rows = sample_size
+
         futures = []
         with ProcessPoolExecutor(max_workers=max_workers) as executor:
             for chunk_id, chunk in enumerate(tqdm(chunks, total=total_rows // chunk_size, desc="Reading and processing CSV")):
                 if should_exit:
                     print("Exiting process due to Ctrl+C")
                     break  # Stop submitting new chunks if we should exit
-                futures.append(executor.submit(process_chunk_parallel, chunk, chunk_id, md_output_path))
+                futures.append(executor.submit(process_chunk_parallel, chunk, chunk_id))
             
             for future in as_completed(futures):
                 if should_exit:
@@ -144,17 +152,48 @@ def read_csv_with_parallel_processing(file_path: str, encoding='utf-8', chunk_si
         if not should_exit:
             final_df = pd.concat(all_chunks, ignore_index=True)
             print(f"Finished processing {len(all_chunks)} chunks")
-            
-            with open(md_output_path, 'a') as md_file:
-                md_file.write("\n## Processing Completed\n\n")
-                md_file.write(f"Total chunks processed: {len(all_chunks)}\n")
-
-            # Generate and write the final summary
-            write_final_summary(md_output_path)
-
             return final_df
         else:
             print("Process terminated by user.")
+            return pd.DataFrame()
+
+    except UnicodeDecodeError as e:
+        # If utf-8 fails, attempt to fall back to ISO-8859-1
+        print(f"Encoding error with 'utf-8', falling back to 'ISO-8859-1': {e}")
+        try:
+            chunks = pd.read_csv(cleaned_csv_path, encoding='ISO-8859-1', chunksize=chunk_size, low_memory=False, quoting=csv.QUOTE_MINIMAL)
+            
+            if debug:
+                print(f"Debug mode enabled. Sampling {sample_size} random records for processing.")
+                full_df = pd.concat(chunks)  # Load the entire CSV into memory
+                full_df_sample = full_df.sample(n=sample_size, random_state=42)  # Take a random sample
+                chunks = [full_df_sample]  # Replace chunks with the sampled data
+                total_rows = sample_size
+
+            futures = []
+            with ProcessPoolExecutor(max_workers=max_workers) as executor:
+                for chunk_id, chunk in enumerate(tqdm(chunks, total=total_rows // chunk_size, desc="Reading and processing CSV (fallback)")):
+                    if should_exit:
+                        print("Exiting process due to Ctrl+C")
+                        break
+                    futures.append(executor.submit(process_chunk_parallel, chunk, chunk_id))
+                
+                for future in as_completed(futures):
+                    if should_exit:
+                        break
+                    processed_chunk = future.result()
+                    all_chunks.append(processed_chunk)
+
+            if not should_exit:
+                final_df = pd.concat(all_chunks, ignore_index=True)
+                print(f"Finished processing {len(all_chunks)} chunks with fallback encoding")
+                return final_df
+            else:
+                print("Process terminated by user.")
+                return pd.DataFrame()
+
+        except Exception as e:
+            print(f"Error reading CSV with fallback encoding: {e}")
             return pd.DataFrame()
 
     except Exception as e:
@@ -167,7 +206,6 @@ def detect_text_columns(chunk: pd.DataFrame) -> list:
         if chunk[col].apply(lambda x: isinstance(x, str)).mean() > 0.5:
             text_columns.append(col)
     return text_columns
-
 
 def process_chunk(chunk: pd.DataFrame) -> pd.DataFrame:
     try:
