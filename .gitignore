@@ -1,2 +1,4 @@
 *.csv
 output.md
+__pycache__
+*.pyc

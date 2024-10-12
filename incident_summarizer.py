@@ -82,7 +82,7 @@ def process_chunk_parallel(chunk: pd.DataFrame, chunk_id: int) -> pd.DataFrame:
                 return pd.DataFrame()  # Return empty dataframe if the process is interrupted
             
             # Print the incident number and summary for monitoring
-            print(f"Processing row {index}: {row['Number']} {row['Summary'][:100]}")
+            print(f"Processing row {index}: {row['Number']}")
 
             # Combine all the relevant text from text columns for summarization
             incident_text = "\n".join([f"{col}: {str(row[col])}" for col in text_columns if isinstance(row[col], str)])  # Ensure proper newlines for better formatting
