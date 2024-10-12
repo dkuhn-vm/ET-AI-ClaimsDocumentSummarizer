@@ -102,7 +102,7 @@ def summarize_incident(incident_text: str, model_name: str = "gemma") -> str:
     :param model_name: The name of the Ollama model to use.
     :return: A summarized string of the incident along with domain and product information.
     """
-    print(f"Summarizing incident: {incident_text[:100]}...")
+    # print(f"Summarizing incident: {incident_text[:100]}...")
 
     # Define the updated system prompt for summarizing individual incidents
     system_prompt = """
@@ -110,6 +110,7 @@ def summarize_incident(incident_text: str, model_name: str = "gemma") -> str:
         Your goal is to summarize each incident and identify key information such as the technical issue, its cause, impact, affected systems, 
         and resolution. Additionally, for each incident, clearly identify the relevant insurance domain (e.g., Underwriting, Sales Marketing, 
         Documents, Distribution, Billing, Claims, Corporate functions) and insurance product line (Personal, Commercial, Life) impacted by the incident.
+        If you cannot find a domain or product, please do not make one up, just note that one could not be determined.
     """
     
     user_prompt = f"Summarize the following incident:\n\n{incident_text}\n\nPlease provide a concise summary including the domain and product."
@@ -131,13 +132,15 @@ def summarize_trend(combined_text: str, model_name: str = "gemma") -> str:
         You are an AI assistant tasked with helping IT teams at a Property and Casualty (P&C) insurance carrier analyze patterns 
         and trends from multiple incident reports. Your goal is to provide a high-level summary that highlights common technical issues, 
         recurring problems, and overall trends across many incidents. Additionally, make sure to identify any trends in the impacted insurance domains 
-        (e.g., Claims, Underwriting, Billing, etc.) and insurance product categories (Personal, Commercial, Life) affected by the incidents.
+        (e.g., Claims, Underwriting, Billing, etc.) and insurance product categories (Personal, Commercial, Life) affected by the incidents. If there is no trend
+        in those particular areas, do not make up facts.
     """
     
     user_prompt = f"Summarize the following combined incident summaries:\n\n{combined_text}\n\nPlease provide a high-level trend summary, including domain and product trends."
     
     # Get the summarized trend text using the new prompt
     return ollama_funcs.call_ollama(combined_text, system_prompt, user_prompt, model_name)
+
 def main() -> None:
     """
     Entry point for testing the summarize_distilbart function.
