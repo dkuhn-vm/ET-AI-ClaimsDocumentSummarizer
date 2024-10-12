@@ -21,7 +21,6 @@ def signal_handler(sig, frame):
 # Register signal handler for Ctrl+C
 signal.signal(signal.SIGINT, signal_handler)
 
-
 def clean_csv(file_path: str, output_path: str) -> None:
     """
     Cleans the input CSV by removing newlines and saving it with the specified encoding.

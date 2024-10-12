@@ -3,27 +3,11 @@ from PyPDF2 import PdfReader
 from docx import Document
 from pdf2image import convert_from_path
 import tempfile
-from tqdm import tqdm
-from concurrent.futures import ProcessPoolExecutor, as_completed
-import pandas as pd
-import csv
-import signal
-from typing import Tuple
+
 if __name__ == "__main__":
     import text_processing, img_processing, summarizers
 else:
     from vm_ai_helpers import text_processing, img_processing, summarizers
-
-# Create a global flag to stop the processing when Ctrl+C is pressed
-should_exit = False
-
-def signal_handler(sig, frame):
-    global should_exit
-    print("Gracefully shutting down...")
-    should_exit = True  # Set the exit flag to True
-
-# Register signal handler for Ctrl+C
-signal.signal(signal.SIGINT, signal_handler)
 
 def read_pdf(file_path: str) -> str:
     """
