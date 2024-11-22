@@ -303,7 +303,7 @@ def main() -> None:
     # Example usage: Replace with your actual file path
     file_path = 'incident_data/Incidents.csv'
     #summarize_incidents_from_csv(file_path=file_path)
-    summarize_incidents_from_csv(file_path=file_path,model_name="gemma", debug=True, sample_size=200)
+    summarize_incidents_from_csv(file_path=file_path,model_name="mistral-nemo", debug=True, sample_size=100)
     #summarize_incidents_from_csv(file_path=file_path,model_name="llama3.1", debug=True, sample_size=600)
 
 if __name__ == "__main__":

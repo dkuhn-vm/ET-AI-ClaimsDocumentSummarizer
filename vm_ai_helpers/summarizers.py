@@ -74,7 +74,6 @@ def summarize_distilbart(text: str) -> str:
     # Combine the individual summaries into one cohesive summary by joining them with spaces.
     return " ".join(summary_text)
 
-
 def summarize_claims_with_ollama(text: str, model_name: str = "gemma") -> str:
     """
     Summarizes a given text by querying an Ollama model and handling streaming responses.
