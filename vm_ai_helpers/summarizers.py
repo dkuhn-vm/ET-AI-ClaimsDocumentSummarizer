@@ -114,7 +114,8 @@ def summarize_incident(incident_text: str, model_name: str = "gemma") -> str:
     """
     
     system_prompt = """
-        You are an AI assistant tasked with processing individual incident reports from a Property and Casualty (P&C) insurance carrier. For each incident, summarize and extract the following details in a structured format:
+        You are an AI assistant tasked with processing individual incident reports from a Property and Casualty (P&C) insurance carrier. 
+        For each incident, summarize and extract the following details in a structured format:
 
         1. Incident Overview:
         - Provide a concise summary of the technical issue, its root cause (if known), its impact, and resolution steps (if available).
@@ -204,8 +205,8 @@ def summarize_trend(combined_text: str, model_name: str = "gemma") -> str:
         Ensure that each section includes clear and structured details. Avoid over-condensing; provide examples for context. Use percentages and structured formats wherever possible.
         """
     
-    #user_prompt = f"Summarize the following combined incident summaries:\n\n{combined_text}\n\nPlease provide a high-level trend summary, including domain and product trends given the above template.  Do not include any fluff, this is very professional and will go in document"
-    user_prompt = f"Please use the following incident summaries:\n\n{combined_text}\n\nto identify trends and create a comprehensive trend analysis report using the template above. Do not provide summaries for individual incidents, just include the summary Do not provide additional conversational text as this will be used as an input into other data."
+    user_prompt = f"Summarize all of the following combined incident summaries:\n\n{combined_text}"
+    #user_prompt = f"Please use the following combined incident summaries:\n\n{combined_text}\n\nto identify trends and create a comprehensive trend analysis report using the template above. Do not provide summaries for individual incidents, just include the summary Do not provide additional conversational text as this will be used as an input into other data."
     # Get the summarized trend text using the new prompt
     return ollama_funcs.call_ollama(combined_text, system_prompt, user_prompt, model_name)
 
