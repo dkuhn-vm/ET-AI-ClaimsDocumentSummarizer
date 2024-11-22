@@ -184,17 +184,17 @@ def summarize_trend(combined_text: str, model_name: str = "gemma") -> str:
         - - Total number of incidents associated with the application.
         - - Subfunctions impacted (if any).
         - - Patterns identified for these incidents.
-        - - Detailed examples of 3-4 incidents, including:
-        - - Technical issue description.
-        - - Impact of the incident.
-        - - Resolution status (if available).
+        - - Examples of 3-4 incidents, including:
+        - - - Technical issue description.
+        - - - Impact of the incident.
+        - - - Resolution status (if available).
         2. Group incidents by Pattern:
         - For each pattern:
         - - Pattern name/description.
         - - Percentage of incidents matching the pattern.
         - - Number of high-priority (P2) incidents related to the pattern.
         - - Top 5 applications associated with this pattern.
-        - - Detailed examples of 3-4 incidents that match the pattern.
+        - - Examples of 3-4 incidents that match the pattern.
         3. Overall Observations:
         - Highlight recurring themes or gaps (e.g., unknown root causes, unresolved incidents).
         - Summarize common domains and product trends observed across incidents.
