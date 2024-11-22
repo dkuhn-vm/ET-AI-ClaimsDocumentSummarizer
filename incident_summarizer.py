@@ -229,7 +229,7 @@ def process_incident(row, columns, model_name="gemma"):
     
     return summary
 
-def summarize_incidents_from_csv(file_path, model_name="gemma", debug=False, sample_size=100, output_file="output.md") -> None:
+def summarize_incidents_from_csv(file_path, model_name="gemma2", debug=False, sample_size=100, output_file="output.md") -> None:
     """
     Summarizes incidents from a CSV file using Ollama models and writes only the final trend summary to an output markdown file.
     
@@ -241,14 +241,18 @@ def summarize_incidents_from_csv(file_path, model_name="gemma", debug=False, sam
     """
     global should_exit  # Reference the global flag for exit
     executor = None  # Initialize executor for later shutdown handling
-    
+
     try:
         # Read and process the CSV file with progress tracking
+        if cpu_count > 8: 
+            max_workers = 8  # Limit to 8 workers for large CPU counts
+        else:
+            max_workers = cpu_count  # Use all available CPUs for smaller counts
         if debug:
             print("Debug Mode On")
-            incidents_df = read_csv_with_parallel_processing(file_path=file_path, max_workers=cpu_count, debug=debug, sample_size=sample_size)
+            incidents_df = read_csv_with_parallel_processing(file_path=file_path, max_workers=max_workers, debug=debug, sample_size=sample_size)
         else:
-            incidents_df = read_csv_with_parallel_processing(file_path=file_path, max_workers=cpu_count)
+            incidents_df = read_csv_with_parallel_processing(file_path=file_path, max_workers=max_workers)
         
         all_summaries = []
 
@@ -298,8 +302,9 @@ def summarize_incidents_from_csv(file_path, model_name="gemma", debug=False, sam
 def main() -> None:
     # Example usage: Replace with your actual file path
     file_path = 'incident_data/Incidents.csv'
-    summarize_incidents_from_csv(file_path=file_path)
-    #summarize_incidents_from_csv(file_path=file_path, debug=True, sample_size=2)
+    #summarize_incidents_from_csv(file_path=file_path)
+    summarize_incidents_from_csv(file_path=file_path,model_name="gemma2", debug=True, sample_size=100)
+    #summarize_incidents_from_csv(file_path=file_path,model_name="llama3.1", debug=True, sample_size=600)
 
 if __name__ == "__main__":
     main()

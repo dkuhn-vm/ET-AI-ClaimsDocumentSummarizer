@@ -113,7 +113,40 @@ def summarize_incident(incident_text: str, model_name: str = "gemma") -> str:
         If you cannot find a domain or product, please do not make one up, just note that one could not be determined.
     """
     
-    user_prompt = f"Summarize the following incident:\n\n{incident_text}\n\nPlease provide a concise summary including the domain and product."
+    system_prompt = """
+        You are an AI assistant tasked with processing individual incident reports from a Property and Casualty (P&C) insurance carrier. For each incident, summarize and extract the following details in a structured format:
+
+        1. Incident Overview:
+        - Provide a concise summary of the technical issue, its root cause (if known), its impact, and resolution steps (if available).
+        2. Application Details:
+        - Identify the application involved in the incident from this list: PolicyWriter/PolicyPro, ALIS, STG Billing Informatica Support, Cloudera Data Platform, Navigator, ClaimCenter Guidewire, ePayments/ePayments 2.0, My COUNTRY/My COUNTRY Admin.
+        - If an application is identified, specify:
+        - - The application name.
+        - - The subfunction impacted (e.g., claims processing, authentication, reporting).
+        - If no application is involved, state 'No Associated Application'.
+        3. Pattern Matching:
+        - Match the incident to one or more of the following patterns: 
+        - - High MTTR due to troubleshooting complexity.
+        - - Repeated incidents due to absence of Known Error Database (KEDB).
+        - - Incidents caused by absence of alerts.
+        - - Self-help candidates (incidents avoidable with user articles).
+        - - Runbook automation candidates.
+        - - Alert noise (redundant or related alerts).
+        - - High MTTR due to improper error handling.
+        - - Connectivity issues.
+        - If a pattern applies, specify the pattern name(s). If no pattern matches, state 'Not Applicable'.
+        4. Domain and Product Details:
+        - Identify the impacted insurance domain (e.g., Claims, Billing, Underwriting).
+        - Identify the insurance product (Personal, Commercial, Life) impacted by the incident, or state 'Not Applicable'.
+        5. Priority and Severity:
+        - Determine the priority of the incident based on the possible 5-level scale: Critical, High, Medium, Low, and Informational.
+        - Specify the severity of the impact.
+        
+        Ensure that each section includes clear and structured details. If information is unavailable, state 'Not Provided'.
+        """
+
+    user_prompt = f"Summarize the following incident:\n\n{incident_text}\n\nPlease provide a concise summary including the domain and product given the above template.  Do not include any fluff, this is very professional and will go in document."
+    user_prompt = f"Please process individual incidents from the summary below:\n\n{incident_text}\n\nFor each incident, provide a detailed summary using the template above."
     
     # Get the summarized incident text using the new prompt
     return ollama_funcs.call_ollama(incident_text, system_prompt, user_prompt, model_name)
@@ -136,8 +169,43 @@ def summarize_trend(combined_text: str, model_name: str = "gemma") -> str:
         in those particular areas, do not make up facts.
     """
     
-    user_prompt = f"Summarize the following combined incident summaries:\n\n{combined_text}\n\nPlease provide a high-level trend summary, including domain and product trends."
+    system_prompt = """
+        You are an AI assistant tasked with helping IT teams at a Property and Casualty (P&C) insurance carrier analyze patterns 
+        and trends from multiple incident reports. Your goal is to provide a high-level summary that highlights common technical issues, 
+        recurring problems, and overall trends across many incidents. If there is no trend
+        in those particular areas, do not make up facts. Please follow the template below for trends and patterns.  This is a summarization of all 
+        of the incidents provided to you.
+        
+        Summarize all of the incidents into the following:
+        
+        1. Group incidents by Application:
+        - For each application:
+        - - Application name.
+        - - Total number of incidents associated with the application.
+        - - Subfunctions impacted (if any).
+        - - Patterns identified for these incidents.
+        - - Detailed examples of 3-4 incidents, including:
+        - - Technical issue description.
+        - - Impact of the incident.
+        - - Resolution status (if available).
+        2. Group incidents by Pattern:
+        - For each pattern:
+        - - Pattern name/description.
+        - - Percentage of incidents matching the pattern.
+        - - Number of high-priority (P2) incidents related to the pattern.
+        - - Top 5 applications associated with this pattern.
+        - - Detailed examples of 3-4 incidents that match the pattern.
+        3. Overall Observations:
+        - Highlight recurring themes or gaps (e.g., unknown root causes, unresolved incidents).
+        - Summarize common domains and product trends observed across incidents.
+        4. Actionable Insights:
+        - Provide recommendations for addressing issues, focusing on high-priority patterns or applications.
+        
+        Ensure that each section includes clear and structured details. Avoid over-condensing; provide examples for context. Use percentages and structured formats wherever possible.
+        """
     
+    #user_prompt = f"Summarize the following combined incident summaries:\n\n{combined_text}\n\nPlease provide a high-level trend summary, including domain and product trends given the above template.  Do not include any fluff, this is very professional and will go in document"
+    user_prompt = f"Please use the following incident summaries:\n\n{combined_text}\n\nto identify trends and create a comprehensive trend analysis report using the template above. Do not provide summaries for individual incidents, just include the summary Do not provide additional conversational text as this will be used as an input into other data."
     # Get the summarized trend text using the new prompt
     return ollama_funcs.call_ollama(combined_text, system_prompt, user_prompt, model_name)
 
